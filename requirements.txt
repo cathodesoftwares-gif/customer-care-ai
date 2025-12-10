@@ -1,0 +1,3 @@
+# Customer Care AI - Shared Dependencies
+boto3>=1.34.0
+pydantic>=2.5.0

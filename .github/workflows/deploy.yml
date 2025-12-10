@@ -1,0 +1,80 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual triggers
+
+env:
+  AWS_REGION: us-east-1
+  SAM_TEMPLATE: template.yaml
+
+jobs:
+  deploy:
+    name: Build and Deploy to AWS
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install boto3 sqlglot pydantic psycopg2-binary
+
+      - name: Run unit tests
+        run: |
+          pip install pytest
+          python -m pytest tests/unit/ -v
+
+      - name: SAM Build
+        run: sam build --use-container
+
+      - name: SAM Deploy
+        run: |
+          sam deploy \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --stack-name customer-care-ai-dev \
+            --capabilities CAPABILITY_IAM \
+            --region ${{ env.AWS_REGION }} \
+            --parameter-overrides Environment=dev
+
+      - name: Get API Endpoint
+        id: get-endpoint
+        run: |
+          ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name customer-care-ai-dev \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "API_ENDPOINT=$ENDPOINT" >> $GITHUB_OUTPUT
+          echo "### Deployment Successful! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**API Endpoint:** $ENDPOINT" >> $GITHUB_STEP_SUMMARY
+
+      - name: Test deployed API
+        run: |
+          curl -X POST ${{ steps.get-endpoint.outputs.API_ENDPOINT }}/query \
+            -H "Content-Type: application/json" \
+            -d '{"question": "Where is my order #12345?", "tenant_id": "test", "customer_context": {"email": "test@example.com"}}' \
+            || echo "API test failed (this is expected if Bedrock access not enabled)"

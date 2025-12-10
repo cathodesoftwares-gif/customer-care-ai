@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: B2B SaaS Customer Care AI - Text-to-SQL Engine
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+    MemorySize: 512
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+        BEDROCK_MODEL_ID: anthropic.claude-3-sonnet-20240229-v1:0
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+Resources:
+  # Common Layer with shared code
+  CommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub customer-care-common-${Environment}
+      Description: Common utilities for Customer Care AI
+      ContentUri: layers/common/
+      CompatibleRuntimes:
+        - python3.12
+      RetentionPolicy: Delete
+    Metadata:
+      BuildMethod: python3.12
+
+  # Text-to-SQL Lambda Function
+  TextToSqlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub customer-care-text-to-sql-${Environment}
+      CodeUri: functions/text_to_sql/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: 
+                - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: '*'
+      Events:
+        QueryApi:
+          Type: Api
+          Properties:
+            Path: /query
+            Method: post
+            RestApiId: !Ref CustomerCareApi
+
+  # Chat Handler Lambda Function
+  ChatHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub customer-care-chat-handler-${Environment}
+      CodeUri: functions/chat_handler/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt TextToSqlFunction.Arn
+      Events:
+        ChatApi:
+          Type: Api
+          Properties:
+            Path: /chat
+            Method: post
+            RestApiId: !Ref CustomerCareApi
+
+  # Schema Indexer Lambda Function
+  SchemaIndexerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub customer-care-schema-indexer-${Environment}
+      CodeUri: functions/schema_indexer/
+      Handler: app.lambda_handler
+      Timeout: 300
+      MemorySize: 1024
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: !Sub ${SchemaStoreBucket.Arn}/*
+
+  # API Gateway
+  CustomerCareApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub customer-care-api-${Environment}
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'POST, OPTIONS'"
+        AllowHeaders: "'Content-Type, Authorization, X-Tenant-Id'"
+        AllowOrigin: "'*'"
+
+  # S3 Bucket for Schema Storage
+  SchemaStoreBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub customer-care-schemas-${AWS::AccountId}-${Environment}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${CustomerCareApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+  TextToSqlFunctionArn:
+    Description: Text-to-SQL Lambda Function ARN
+    Value: !GetAtt TextToSqlFunction.Arn
+  SchemaStoreBucketName:
+    Description: S3 Bucket for schema storage
+    Value: !Ref SchemaStoreBucket

@@ -1,0 +1,2 @@
+# Text-to-SQL Lambda Dependencies
+# Most dependencies come from the CommonLayer
