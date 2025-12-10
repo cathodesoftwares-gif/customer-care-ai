@@ -33,7 +33,7 @@ Resources:
         - python3.12
       RetentionPolicy: Delete
     Metadata:
-      BuildMethod: python3.12
+      BuildMethod: makefile
 
   # Text-to-SQL Lambda Function
   TextToSqlFunction:
