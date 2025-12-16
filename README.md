@@ -115,7 +115,7 @@ customer-care-ai/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `BEDROCK_MODEL_ID` | Claude model to use | `anthropic.claude-3-sonnet-20240229-v1:0` |
+| `BEDROCK_MODEL_ID` | Bedrock model to use | `deepseek.r1-v1:0` |
 | `LOG_LEVEL` | Logging verbosity | `INFO` |
 | `DEBUG` | Enable debug output | `false` |
 

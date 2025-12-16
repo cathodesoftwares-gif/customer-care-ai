@@ -86,7 +86,7 @@ class TestTextToSQLIntegration:
         
         This test requires:
         - AWS credentials with Bedrock access
-        - Claude 3 Sonnet model available in the region
+        - DeepSeek R1 model available in the region
         """
         from common.bedrock_client import BedrockClient
         from functions.text_to_sql.prompts.sql_generation import get_sample_schema

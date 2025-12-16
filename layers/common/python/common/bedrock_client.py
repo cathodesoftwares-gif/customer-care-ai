@@ -2,7 +2,7 @@
 Bedrock Client for Text-to-SQL Generation
 
 Provides a wrapper around AWS Bedrock to generate SQL queries
-from natural language using Claude 3 Sonnet.
+from natural language using DeepSeek R1 (or other supported models).
 """
 
 import json
@@ -24,11 +24,11 @@ class BedrockClient:
         Initialize the Bedrock client.
 
         Args:
-            model_id: The Bedrock model ID to use. Defaults to Claude 3 Sonnet.
+            model_id: The Bedrock model ID to use. Defaults to DeepSeek R1.
             region: AWS region. Defaults to environment variable or us-east-1.
         """
         self.model_id = model_id or os.environ.get(
-            "BEDROCK_MODEL_ID", "anthropic.claude-3-sonnet-20240229-v1:0"
+            "BEDROCK_MODEL_ID", "deepseek.r1-v1:0"
         )
         self.region = region or os.environ.get("AWS_REGION", "us-east-1")
         self.client = boto3.client("bedrock-runtime", region_name=self.region)
@@ -151,17 +151,29 @@ Respond directly to the customer:"""
         Returns:
             The model's response text.
         """
-        body = json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": max_tokens,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": 0.1,  # Low temperature for consistent SQL generation
-        })
+        # Check if we're using DeepSeek or Claude model
+        is_deepseek = "deepseek" in self.model_id.lower()
+        
+        if is_deepseek:
+            # DeepSeek R1 format
+            body = json.dumps({
+                "prompt": prompt,
+                "max_tokens": max_tokens,
+                "temperature": 0.1,  # Low temperature for consistent SQL generation
+            })
+        else:
+            # Claude format (Anthropic)
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": max_tokens,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": 0.1,  # Low temperature for consistent SQL generation
+            })
 
         try:
             response = self.client.invoke_model(
@@ -172,7 +184,14 @@ Respond directly to the customer:"""
             )
 
             response_body = json.loads(response["body"].read())
-            return response_body["content"][0]["text"]
+            
+            # Parse response based on model type
+            if is_deepseek:
+                # DeepSeek returns text in 'completion' or 'text' field
+                return response_body.get("completion", response_body.get("text", ""))
+            else:
+                # Claude returns text in content array
+                return response_body["content"][0]["text"]
 
         except ClientError as e:
             logger.error(f"Bedrock API error: {e}")
