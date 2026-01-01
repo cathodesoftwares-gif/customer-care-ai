@@ -44,6 +44,7 @@ jobs:
       - name: Run unit tests
         run: |
           pip install pytest
+          export PYTHONPATH="${PYTHONPATH}:${GITHUB_WORKSPACE}/layers/common/python"
           python -m pytest tests/unit/ -v
 
       - name: SAM Build
