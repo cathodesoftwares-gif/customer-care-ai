@@ -1,14 +1,15 @@
 """
 Database Connector for Multi-Tenant Database Access
 
-Provides secure, read-only connections to client databases
-with connection pooling and secrets management.
+Provides secure, read-only connections to client databases (PostgreSQL)
+and S3-based data sources (CSV files) with schema inference.
 """
 
 import json
 import logging
 import os
 from contextlib import contextmanager
+from io import StringIO
 from typing import Any, Generator, Optional
 
 import boto3
@@ -23,11 +24,20 @@ try:
     PSYCOPG2_AVAILABLE = True
 except ImportError:
     PSYCOPG2_AVAILABLE = False
-    logger.warning("psycopg2 not available - database connectivity disabled")
+    logger.warning("psycopg2 not available - PostgreSQL connectivity disabled")
+
+# Only import pandas if available
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    logger.warning("pandas not available - S3/CSV connectivity disabled")
 
 
 class DatabaseConnector:
-    """Manages database connections for tenant databases."""
+    """Manages data connections for tenant databases (PostgreSQL or S3/CSV)."""
+
 
     def __init__(self, region: Optional[str] = None):
         """
@@ -216,3 +226,240 @@ class DatabaseConnector:
             lines.append("")
 
         return "\n".join(lines)
+
+    # =========================================================================
+    # S3/CSV Data Source Methods
+    # =========================================================================
+
+    def get_schema_from_s3(
+        self,
+        bucket: str,
+        prefix: str,
+        sample_rows: int = 5,
+    ) -> dict:
+        """
+        Extract schema from CSV files in an S3 bucket.
+
+        Each CSV file is treated as a table. Column names come from headers,
+        and data types are inferred from sample data.
+
+        Args:
+            bucket: S3 bucket name
+            prefix: S3 prefix (folder) containing CSV files
+            sample_rows: Number of rows to sample for type inference
+
+        Returns:
+            Schema dict with table names, columns, types, and sample data
+        """
+        if not PANDAS_AVAILABLE:
+            raise RuntimeError("pandas is required for S3/CSV schema extraction")
+
+        s3 = boto3.client("s3", region_name=self.region)
+        schema: dict = {}
+
+        # List CSV files in the prefix
+        csv_files = self._list_csv_files(s3, bucket, prefix)
+        logger.info(f"Found {len(csv_files)} CSV files in s3://{bucket}/{prefix}")
+
+        for csv_key in csv_files:
+            table_name = self._csv_key_to_table_name(csv_key)
+            logger.info(f"Processing table: {table_name} from {csv_key}")
+
+            # Read CSV from S3
+            df = self._read_csv_from_s3(s3, bucket, csv_key)
+
+            if df is not None and not df.empty:
+                schema[table_name] = {
+                    "source_file": csv_key,
+                    "row_count": len(df),
+                    "columns": self._infer_columns_from_dataframe(df),
+                    "sample_data": df.head(sample_rows).to_dict(orient="records"),
+                }
+
+        # Detect relationships between tables
+        schema = self._detect_relationships(schema)
+
+        return schema
+
+    def _list_csv_files(self, s3, bucket: str, prefix: str) -> list[str]:
+        """List all CSV files in an S3 prefix."""
+        csv_files = []
+        paginator = s3.get_paginator("list_objects_v2")
+
+        # Ensure prefix ends with /
+        if prefix and not prefix.endswith("/"):
+            prefix = prefix + "/"
+
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if key.lower().endswith(".csv"):
+                    csv_files.append(key)
+
+        return csv_files
+
+    def _csv_key_to_table_name(self, csv_key: str) -> str:
+        """Convert CSV S3 key to table name."""
+        # Extract filename without extension
+        filename = csv_key.split("/")[-1]
+        table_name = filename.rsplit(".", 1)[0]
+        # Clean up: lowercase, replace spaces/hyphens with underscores
+        table_name = table_name.lower().replace(" ", "_").replace("-", "_")
+        return table_name
+
+    def _read_csv_from_s3(self, s3, bucket: str, key: str) -> Optional[Any]:
+        """Read a CSV file from S3 into a pandas DataFrame."""
+        try:
+            response = s3.get_object(Bucket=bucket, Key=key)
+            csv_content = response["Body"].read().decode("utf-8")
+            df = pd.read_csv(StringIO(csv_content))
+            return df
+        except Exception as e:
+            logger.error(f"Error reading CSV from s3://{bucket}/{key}: {e}")
+            return None
+
+    def _infer_columns_from_dataframe(self, df: Any) -> list[dict]:
+        """Infer column metadata from a pandas DataFrame."""
+        columns = []
+
+        for col_name in df.columns:
+            col_data = df[col_name]
+
+            # Infer type
+            inferred_type = self._infer_column_type(col_data)
+
+            # Check for nulls
+            has_nulls = col_data.isna().any()
+
+            # Get sample value
+            sample_value = None
+            non_null = col_data.dropna()
+            if len(non_null) > 0:
+                sample_value = str(non_null.iloc[0])
+
+            # Detect if likely primary key
+            is_primary_key = self._is_likely_primary_key(col_name, col_data)
+
+            columns.append({
+                "name": col_name,
+                "type": inferred_type,
+                "nullable": bool(has_nulls),
+                "primary_key": is_primary_key,
+                "sample_value": sample_value,
+            })
+
+        return columns
+
+    def _infer_column_type(self, series: Any) -> str:
+        """Infer SQL-like type from pandas series."""
+        dtype = series.dtype
+
+        # Check pandas dtype
+        if pd.api.types.is_integer_dtype(dtype):
+            return "integer"
+        elif pd.api.types.is_float_dtype(dtype):
+            return "decimal"
+        elif pd.api.types.is_bool_dtype(dtype):
+            return "boolean"
+        elif pd.api.types.is_datetime64_any_dtype(dtype):
+            return "timestamp"
+
+        # For object dtype, try to infer from values
+        if dtype == "object":
+            # Sample non-null values
+            sample = series.dropna().head(10)
+            if len(sample) == 0:
+                return "text"
+
+            # Try to detect date/datetime patterns
+            try:
+                pd.to_datetime(sample, format="%Y-%m-%d", errors="raise")
+                return "date"
+            except (ValueError, TypeError):
+                pass
+
+            try:
+                pd.to_datetime(sample, errors="raise")
+                return "timestamp"
+            except (ValueError, TypeError):
+                pass
+
+            # Check if looks like numeric
+            try:
+                pd.to_numeric(sample, errors="raise")
+                return "decimal"
+            except (ValueError, TypeError):
+                pass
+
+            # Check average string length for varchar vs text
+            avg_len = sample.str.len().mean()
+            if avg_len < 100:
+                return "varchar"
+            else:
+                return "text"
+
+        return "text"
+
+    def _is_likely_primary_key(self, col_name: str, series: Any) -> bool:
+        """Guess if a column is likely a primary key."""
+        col_lower = col_name.lower()
+
+        # Check common primary key patterns
+        if col_lower == "id":
+            return True
+        if col_lower.endswith("_id") and col_lower == series.name.lower():
+            # Only if it's the first id-like column
+            return series.is_unique and not series.isna().any()
+
+        return False
+
+    def _detect_relationships(self, schema: dict) -> dict:
+        """Detect foreign key relationships between tables based on naming."""
+        table_names = set(schema.keys())
+
+        for table_name, table_info in schema.items():
+            relationships = []
+
+            for col in table_info["columns"]:
+                col_name = col["name"].lower()
+
+                # Check for foreign key pattern: {other_table}_id
+                if col_name.endswith("_id") and col_name != "id":
+                    # Extract potential referenced table
+                    ref_table = col_name[:-3]  # Remove "_id"
+
+                    if ref_table in table_names or f"{ref_table}s" in table_names:
+                        actual_ref = ref_table if ref_table in table_names else f"{ref_table}s"
+                        relationships.append({
+                            "column": col["name"],
+                            "references_table": actual_ref,
+                            "references_column": "id",
+                        })
+
+            if relationships:
+                table_info["relationships"] = relationships
+
+        return schema
+
+    def get_sample_data_from_s3(
+        self,
+        bucket: str,
+        prefix: str,
+        table_name: str,
+        limit: int = 5,
+    ) -> list[dict]:
+        """Get sample rows from a specific table/CSV file."""
+        if not PANDAS_AVAILABLE:
+            raise RuntimeError("pandas is required for S3/CSV access")
+
+        s3 = boto3.client("s3", region_name=self.region)
+        csv_files = self._list_csv_files(s3, bucket, prefix)
+
+        # Find the matching CSV file
+        for csv_key in csv_files:
+            if self._csv_key_to_table_name(csv_key) == table_name:
+                df = self._read_csv_from_s3(s3, bucket, csv_key)
+                if df is not None:
+                    return df.head(limit).to_dict(orient="records")
+
+        return []

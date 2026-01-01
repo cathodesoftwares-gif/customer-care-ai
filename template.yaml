@@ -10,7 +10,7 @@ Globals:
     Environment:
       Variables:
         LOG_LEVEL: INFO
-        BEDROCK_MODEL_ID: anthropic.claude-3-sonnet-20240229-v1:0
+        BEDROCK_MODEL_ID: anthropic.claude-3-5-sonnet-20241022-v2:0
 
 Parameters:
   Environment:
@@ -51,7 +51,7 @@ Resources:
               Action:
                 - bedrock:InvokeModel
               Resource: 
-                - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0
+                - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0
             - Effect: Allow
               Action:
                 - secretsmanager:GetSecretValue

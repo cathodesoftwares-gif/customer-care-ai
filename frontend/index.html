@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Care AI - Chat</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+        // Environment variable injection for Vercel
+        // Set API_URL in Vercel dashboard (e.g., https://xxx.execute-api.us-east-1.amazonaws.com/dev/chat)
+        const urlParams = new URLSearchParams(window.location.search);
+        window.API_URL = urlParams.get('api_url') || (typeof process !== 'undefined' && process.env?.API_URL);
+    </script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🤖</span>
+                <span class="logo-text">Customer Care AI</span>
+            </div>
+            <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span>Online</span>
+            </div>
+        </header>
+
+        <!-- Chat Container -->
+        <main class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+                <!-- Welcome Message -->
+                <div class="message bot-message">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <p>Hello! I'm your AI assistant. I can help you with questions about your loans.</p>
+                        <p class="message-hint">Try asking things like:</p>
+                        <ul class="suggestion-list">
+                            <li class="suggestion" onclick="sendSuggestion(this)">How many loans are in the database?
+                            </li>
+                            <li class="suggestion" onclick="sendSuggestion(this)">What is the average loan amount?</li>
+                            <li class="suggestion" onclick="sendSuggestion(this)">Show me approved loans with high
+                                credit scores</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Input Area -->
+        <footer class="input-area">
+            <form class="input-form" id="chatForm" onsubmit="sendMessage(event)">
+                <input type="text" id="messageInput" class="message-input" placeholder="Ask about your loans..."
+                    autocomplete="off" autofocus />
+                <button type="submit" class="send-button" id="sendButton">
+                    <span class="send-icon">➤</span>
+                </button>
+            </form>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <p>Thinking...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

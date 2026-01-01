@@ -3,3 +3,5 @@ boto3>=1.34.0
 pydantic>=2.5.0
 psycopg2-binary>=2.9.9
 sqlglot>=20.0.0
+pandas>=2.1.0
+pandasql>=0.7.3

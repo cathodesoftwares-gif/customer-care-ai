@@ -28,3 +28,12 @@ htmlcov/
 # Local environment
 .env
 .env.local
+
+# Test data (keep locally, don't commit)
+data/
+*.csv
+*.zip
+financial-risk-for-loan-approval.zip
+
+# Kaggle credentials (NEVER commit)
+kaggle.json
