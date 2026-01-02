@@ -42,6 +42,9 @@ Resources:
       FunctionName: !Sub customer-care-text-to-sql-${Environment}
       CodeUri: functions/text_to_sql/
       Handler: app.lambda_handler
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref SchemaStoreBucket
       Layers:
         - !Ref CommonLayer
       Policies:
