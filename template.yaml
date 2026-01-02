@@ -57,6 +57,10 @@ Resources:
               Action:
                 - secretsmanager:GetSecretValue
               Resource: '*'
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub ${SchemaStoreBucket.Arn}/*
       Events:
         QueryApi:
           Type: Api

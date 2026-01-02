@@ -87,9 +87,27 @@ def lambda_handler(event: dict, context: Any) -> dict:
             schema_dict = db.get_schema(secret_arn)
             schema_context = db.format_schema_for_prompt(schema_dict)
         else:
-            # Use sample schema (for demo/testing)
-            schema_context = get_sample_schema()
-            schema_dict = None
+            # Try to get schema from CSV in S3
+            try:
+                from common.csv_query_engine import CSVQueryEngine
+                
+                csv_engine = CSVQueryEngine()
+                bucket_name = os.environ.get("DATA_BUCKET", f"customer-care-schemas-{os.environ.get('AWS_ACCOUNT_ID', 'unknown')}-dev")
+                csv_key = os.environ.get("CSV_DATA_KEY", "data/Loan.csv")
+                
+                logger.info(f"Loading CSV schema from s3://{bucket_name}/{csv_key}")
+                csv_engine.load_from_s3(bucket_name, csv_key, table_name="loan")
+                
+                # Get schema and format for prompt
+                schema_dict = csv_engine.get_schema()
+                schema_context = csv_engine.format_schema_for_prompt()
+                logger.info("Using CSV schema for query generation")
+                
+            except Exception as e:
+                # CSV schema failed, use sample schema
+                logger.warning(f"Could not load CSV schema: {e}. Using sample schema.")
+                schema_context = get_sample_schema()
+                schema_dict = None
 
         # Add few-shot examples to schema context
         full_context = f"{schema_context}\n\n{get_few_shot_examples()}"
@@ -121,9 +139,10 @@ def lambda_handler(event: dict, context: Any) -> dict:
         safe_sql = validator.sanitize(generated_sql)
         safe_sql = validator.add_limit_if_missing(safe_sql)
 
-        # Execute query (if we have database credentials)
+        # Execute query based on data source
         if secret_arn:
-            logger.info("Executing query...")
+            # Real PostgreSQL database
+            logger.info("Executing query against PostgreSQL...")
             try:
                 results = db.execute_query(secret_arn, safe_sql)
             except Exception as e:
@@ -133,8 +152,29 @@ def lambda_handler(event: dict, context: Any) -> dict:
                     "Let me connect you with a support agent who can help."
                 )
         else:
-            # Demo mode - return mock results
-            results = _get_mock_results(question)
+            # Try CSV data source from S3
+            try:
+                from common.csv_query_engine import CSVQueryEngine
+                
+                logger.info("Attempting to use CSV data source...")
+                csv_engine = CSVQueryEngine()
+                
+                # Get bucket and CSV key from environment or use defaults
+                bucket_name = os.environ.get("DATA_BUCKET", f"customer-care-schemas-{os.environ.get('AWS_ACCOUNT_ID', 'unknown')}-dev")
+                csv_key = os.environ.get("CSV_DATA_KEY", "data/Loan.csv")
+                
+                # Load CSV from S3
+                logger.info(f"Loading CSV from s3://{bucket_name}/{csv_key}")
+                csv_engine.load_from_s3(bucket_name, csv_key, table_name="loan")
+                
+                # Execute the query
+                results = csv_engine.execute_query(safe_sql)
+                logger.info(f"CSV query returned {len(results)} results")
+                
+            except Exception as csv_error:
+                # CSV failed, fall back to mock data
+                logger.warning(f"CSV query failed: {csv_error}. Using mock data.")
+                results = _get_mock_results(question)
 
         # Generate natural language response
         logger.info("Generating response...")
