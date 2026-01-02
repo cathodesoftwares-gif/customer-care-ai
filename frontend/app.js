@@ -36,7 +36,7 @@ function getApiUrl() {
     }
 
     // Option 2: Hardcode your AWS API Gateway URL here after deployment
-    const AWS_API_URL = 'PLACEHOLDER_AWS_API_URL';
+    const AWS_API_URL = 'https://jyiurf3hz3.execute-api.us-east-1.amazonaws.com/dev/chat';
 
     if (AWS_API_URL === 'PLACEHOLDER_AWS_API_URL') {
         console.error('⚠️ AWS API URL not configured! Please update app.js with your API Gateway endpoint.');
