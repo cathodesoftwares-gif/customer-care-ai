@@ -83,9 +83,9 @@ def lambda_handler(event: dict, context: Any) -> dict:
 
         elif intent == "greeting":
             return _success_response({
-                "response": "Hello! I'm here to help you with your orders. "
-                           "You can ask me about order status, delivery tracking, "
-                           "or your order history.",
+                "response": "Hello! I'm here to help you with questions about loan data. "
+                           "You can ask me about loan statistics, credit scores, "
+                           "or approval rates.",
                 "session_id": session_id,
                 "escalate": False,
             })
@@ -101,9 +101,9 @@ def lambda_handler(event: dict, context: Any) -> dict:
         else:
             # General conversation - could add more sophisticated handling
             return _success_response({
-                "response": "I can help you with questions about your orders. "
-                           "Try asking something like 'Where is my order #12345?' "
-                           "or 'Show me my order history'.",
+                "response": "I can help you with questions about loan data. "
+                           "Try asking something like 'How many loans are in the database?' "
+                           "or 'What is the average loan amount?'",
                 "session_id": session_id,
                 "escalate": False,
             })
@@ -133,8 +133,13 @@ def _classify_intent(message: str) -> str:
 
     # Check for data queries
     data_keywords = [
+        # Original order keywords
         "order", "shipping", "delivered", "track", "status",
         "bought", "purchase", "history", "when", "where",
+        # Loan-related keywords
+        "loan", "credit", "approved", "rejected", "amount", "score",
+        "income", "average", "how many", "count", "show", "list",
+        "total", "sum", "interest", "rate", "payment", "database",
     ]
     if any(k in message_lower for k in data_keywords):
         return "data_query"
