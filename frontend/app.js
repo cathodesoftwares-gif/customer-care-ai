@@ -7,15 +7,44 @@
 
 // Configuration
 const CONFIG = {
-    // API URL - automatically uses environment variable in production (Vercel)
-    // or falls back to localhost for local development
-    apiUrl: window.API_URL || 'http://localhost:5001/api/chat',
+    // API URL configuration
+    // TODO: Replace this with your AWS API Gateway URL from CloudFormation outputs
+    // Example: https://abc123xyz.execute-api.us-east-1.amazonaws.com/dev/chat
+    apiUrl: getApiUrl(),
     tenantId: 'test-tenant',
     customerContext: {
         email: 'test@example.com',
         verified: true
     }
 };
+
+/**
+ * Get API URL based on environment
+ */
+function getApiUrl() {
+    // Check if running on localhost
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'http://localhost:5001/api/chat';
+    }
+
+    // Production - you need to set this after AWS deployment
+    // Option 1: Set via URL parameter for testing: ?api_url=https://your-api.com/dev/chat
+    const urlParams = new URLSearchParams(window.location.search);
+    const apiFromUrl = urlParams.get('api_url');
+    if (apiFromUrl) {
+        return apiFromUrl;
+    }
+
+    // Option 2: Hardcode your AWS API Gateway URL here after deployment
+    const AWS_API_URL = 'PLACEHOLDER_AWS_API_URL';
+
+    if (AWS_API_URL === 'PLACEHOLDER_AWS_API_URL') {
+        console.error('⚠️ AWS API URL not configured! Please update app.js with your API Gateway endpoint.');
+        return null;
+    }
+
+    return AWS_API_URL;
+}
 
 // DOM Elements
 const chatMessages = document.getElementById('chatMessages');
@@ -63,11 +92,21 @@ async function sendMessage(event) {
     } catch (error) {
         console.error('Chat error:', error);
         typingIndicator.remove();
-        addMessage(
-            'Sorry, I\'m having trouble connecting to the server. Please make sure the local server is running.',
-            'bot',
-            true
-        );
+
+        // Check if API URL is configured
+        if (!CONFIG.apiUrl) {
+            addMessage(
+                'The backend API is not configured yet. Please wait for AWS deployment to complete and update the API URL in the code.',
+                'bot',
+                true
+            );
+        } else {
+            addMessage(
+                'Sorry, I\'m having trouble connecting to the backend API. Please check if the AWS Lambda deployment is complete.',
+                'bot',
+                true
+            );
+        }
     }
 }
 
