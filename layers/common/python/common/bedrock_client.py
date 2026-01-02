@@ -59,19 +59,31 @@ Customer Context (use this to scope queries to this customer only):
 - Customer ID: {customer_context.get('customer_id', 'N/A')}
 """
 
-        prompt = f"""You are a SQL expert. Generate a PostgreSQL query to answer the user's question.
+        prompt = f"""You are a SQL expert. Generate a SQLite query to answer the user's question.
 
 DATABASE SCHEMA:
 {schema_context}
 
 {customer_info}
 
-RULES:
+IMPORTANT - SQLite SYNTAX RULES:
 1. Generate ONLY SELECT statements - never INSERT, UPDATE, DELETE, or DROP
 2. Always scope queries to the specific customer when customer context is provided
 3. Use proper JOIN syntax when needed
 4. Limit results to 100 rows unless specifically asked for more
 5. Return clean, executable SQL without markdown formatting
+
+SQLite-SPECIFIC SYNTAX (use these instead of PostgreSQL):
+- For date extraction: Use strftime('%Y', date_column) instead of EXTRACT(YEAR FROM date_column)
+- For current date: Use date('now') instead of CURRENT_DATE
+- For string concatenation: Use || instead of CONCAT()
+- Boolean values: Use 1 for TRUE, 0 for FALSE
+- No BOOLEAN type: Use INTEGER (0/1) instead
+
+EXAMPLES:
+- Extract year: strftime('%Y', applicationdate)
+- Extract month: strftime('%m', applicationdate)
+- Format date: strftime('%Y-%m-%d', applicationdate)
 
 USER QUESTION: {question}
 
